@@ -20,7 +20,7 @@ namespace PuertsUnityMcp.Editor
         private const string HierarchyResultsDirectoryName = "hierarchy-results";
         private const string EditorWindowScreenshotsDirectoryName = "editor-window-screenshots";
 
-        private void RegisterEditorSceneAndWindowTools()
+        partial void RegisterEditorSceneAndWindowTools()
         {
             var hierarchySchema = JsonSchemas.Object(
                 JsonSchemas.BooleanProperty("UseSelection", "uLoop-compatible alias. When true, selected GameObject roots are exported and child selections under selected parents are deduplicated."),

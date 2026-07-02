@@ -21,7 +21,7 @@ namespace PuertsUnityMcp.Editor
         private const int DefaultProfilerTopMarkerCount = 40;
         private const double DefaultProfilerHitchThresholdMs = 50d;
 
-        private void RegisterPerformanceTools()
+        partial void RegisterPerformanceTools()
         {
             var schema = JsonSchemas.Object(
                 JsonSchemas.StringProperty("target", "editor records the Unity Editor. current/player/phone uses the Profiler's currently attached target, for example an Android or iOS player selected in the Profiler window."),

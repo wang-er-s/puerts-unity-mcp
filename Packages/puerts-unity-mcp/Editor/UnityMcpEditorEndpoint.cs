@@ -12,6 +12,9 @@ namespace PuertsUnityMcp.Editor
 {
     internal sealed partial class UnityMcpEditorEndpoint : IUnityMcpEndpoint, IDisposable
     {
+        partial void RegisterEditorSceneAndWindowTools();
+        partial void RegisterPerformanceTools();
+
         private readonly UnityMcpToolRegistry tools = new UnityMcpToolRegistry();
         private readonly OperationStore operations = new OperationStore();
         private PuertsScriptHost editorScriptHost;

@@ -181,6 +181,7 @@ export function syncLocalPackage(options) {
 
   if (direction === "push") {
     copyDirectoryMirror(repoRoot, localPackageRoot, localPackageSyncIgnoredNames);
+    assertRequiredSyncedPackageFiles(localPackageRoot);
     if (!options.skipManifestUpdate) {
       addPumToBuild(unityRoot, { localPackageDirectoryName });
       if (options.enablePackageTests) {
@@ -195,6 +196,22 @@ export function syncLocalPackage(options) {
   copyDirectoryOverlay(localPackageRoot, repoRoot, localPackageSyncIgnoredNames);
   console.log(`Pulled package from ${localPackageRoot}`);
   console.log("Pull overlays files only; it does not delete files that were removed from the Unity-local package.");
+}
+
+function assertRequiredSyncedPackageFiles(localPackageRoot) {
+  const packageRoot = path.join(localPackageRoot, "Packages", "puerts-unity-mcp");
+  const required = [
+    path.join("Editor", "UnityMcpEditorEndpoint.cs"),
+    path.join("Editor", "UnityMcpEditorEndpoint.SceneWindowTools.cs"),
+    path.join("Editor", "UnityMcpEditorEndpoint.Performance.cs"),
+    path.join("Runtime", "Protocol", "UnityMcpJsonArgumentReader.cs"),
+    path.join("Tools~", "puerts-unity-mcp-stdio-proxy.js"),
+    "package.json"
+  ];
+  const missing = required.filter(relative => !fs.existsSync(path.join(packageRoot, relative)));
+  if (missing.length > 0) {
+    throw new Error(`Local package sync missed required files: ${missing.join(", ")}`);
+  }
 }
 
 export function installToUnityProject(options) {
