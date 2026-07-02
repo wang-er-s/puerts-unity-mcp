@@ -455,7 +455,12 @@ Assets/puerts-unity-mcp/Runtime/Generated/Plugins/puerts_il2cpp/
 
 Do not ignore the whole `puerts-unity-mcp-extension` directory. Project configs, JS tools, and skills under that directory are persistent project assets and may be committed when they are intended to travel with the project. Do not ignore `puerts-unity-mcp/Packages/puerts-unity-mcp/Runtime/Plugins/Android`; that folder contains the MCP Android permission library. Upstream PuerTS `.so` files come from `third_party/puerts`; do not duplicate them inside the MCP package.
 
-`puerts-unity-mcp/third_party/puerts/unity/.gitignore` comes from upstream PuerTS and ignores `*.meta` files Unity may generate for the vendored PuerTS UPM packages. Seeing those files after opening the Unity project is normal; do not commit them. Native plugin `.meta` files that upstream PuerTS already provides remain part of the source tree.
+The vendored PuerTS `core` and `v8` UPM package `.meta` files must travel with the source tree. They pin ScriptedImporter GUIDs such as `MJSImporter.cs`; if those metas are missing on another machine, Unity regenerates a new importer GUID and rewrites `*.mjs.meta` `script.guid` references. If a Unity project vendors this repository under `puerts-unity-mcp/`, make sure the project `.gitignore` does not hide these paths, or force-add them once:
+
+```bash
+git add -f puerts-unity-mcp/third_party/puerts/unity/upms/core/**/*.meta
+git add -f puerts-unity-mcp/third_party/puerts/unity/upms/v8/**/*.meta
+```
 
 ## Directory Structure
 

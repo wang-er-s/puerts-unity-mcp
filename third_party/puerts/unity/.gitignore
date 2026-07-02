@@ -1,4 +1,13 @@
 *.meta
+
+# PuerTS Unity MCP vendors the released core/v8 UPM packages. Keep their
+# .meta files trackable so ScriptedImporter GUIDs such as MJSImporter.cs stay
+# stable across machines; otherwise Unity regenerates importer GUIDs and
+# rewrites *.mjs.meta script references.
+!/upms/core/**/*.meta
+!/upms/v8/**/*.meta
+/upms/core/Editor/Src/Generator/Mono.Reflection.dll.meta
+/upms/core/Editor/Src/Generator/Mono.Reflection.pdb.meta
 /test/dotnet/vsauto*
 /test/dotnet/Src/StaticWrapper
 /test/unity/Assets/Resources/*.meta
