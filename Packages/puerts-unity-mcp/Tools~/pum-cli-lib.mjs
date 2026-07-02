@@ -275,6 +275,7 @@ export function installToUnityProject(options) {
 
 export function ensureExtensionDemos(projectRoot, options = {}) {
   assertUnityProjectRoot(projectRoot);
+  migrateLegacyExtensionLayout(projectRoot);
   const sourceRoot = resolveExtensionDemoSourceRoot(options);
   const targetRoot = path.join(projectRoot, "puerts-unity-mcp-extension");
   if (!fs.existsSync(sourceRoot)) {
@@ -288,6 +289,32 @@ export function ensureExtensionDemos(projectRoot, options = {}) {
     created: result.created,
     skipped: result.skipped
   };
+}
+
+export function migrateLegacyExtensionLayout(projectRoot) {
+  assertUnityProjectRoot(projectRoot);
+  const moves = [
+    ["puerts-unity-mcp-extension/Editor/config.json", "puerts-unity-mcp-extension/editor-mcp-config.json"],
+    ["puerts-unity-mcp-extension/Runtime/runtime-config.json", "puerts-unity-mcp-extension/mobile-mcp-config.json"],
+    ["puerts-unity-mcp-extension/Editor/editor-tools", "puerts-unity-mcp-extension/js/editor"],
+    ["puerts-unity-mcp-extension/Runtime/runtime-tools", "puerts-unity-mcp-extension/js/runtime"]
+  ];
+
+  let moved = 0;
+  let skipped = 0;
+  for (const [sourceRelative, targetRelative] of moves) {
+    const result = moveLegacyExtensionPath(projectRoot, sourceRelative, targetRelative);
+    moved += result.moved;
+    skipped += result.skipped;
+  }
+
+  removeEmptyDirectory(projectRoot, path.join("puerts-unity-mcp-extension", "Editor"));
+  removeEmptyDirectory(projectRoot, path.join("puerts-unity-mcp-extension", "Runtime"));
+  if (moved > 0 || skipped > 0) {
+    console.log(`Migrated legacy extension layout. Moved ${moved}, skipped ${skipped}.`);
+  }
+
+  return { moved, skipped };
 }
 
 export async function vendorPuerts(options) {
@@ -1004,6 +1031,69 @@ function copyDirectoryOverlay(source, target, ignoredNames = new Set()) {
     }
 
     copyRecursive(path.join(source, entry.name), path.join(target, entry.name), ignoredNames);
+  }
+}
+
+function moveLegacyExtensionPath(projectRoot, sourceRelativePath, targetRelativePath) {
+  const source = path.resolve(projectRoot, sourceRelativePath);
+  const target = path.resolve(projectRoot, targetRelativePath);
+  assertPathInside(projectRoot, source);
+  assertPathInside(projectRoot, target);
+  if (!fs.existsSync(source)) {
+    return { moved: 0, skipped: 0 };
+  }
+
+  if (fs.statSync(source).isDirectory()) {
+    return moveDirectoryContentsMissing(projectRoot, source, target);
+  }
+
+  if (fs.existsSync(target)) {
+    return { moved: 0, skipped: 1 };
+  }
+
+  ensureDirectory(path.dirname(target));
+  fs.renameSync(source, target);
+  return { moved: 1, skipped: 0 };
+}
+
+function moveDirectoryContentsMissing(projectRoot, source, target) {
+  let moved = 0;
+  let skipped = 0;
+  ensureDirectory(target);
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    const sourcePath = path.join(source, entry.name);
+    const targetPath = path.join(target, entry.name);
+    assertPathInside(projectRoot, sourcePath);
+    assertPathInside(projectRoot, targetPath);
+    if (entry.isDirectory()) {
+      const result = moveDirectoryContentsMissing(projectRoot, sourcePath, targetPath);
+      moved += result.moved;
+      skipped += result.skipped;
+      removeDirectoryIfEmptyAbsolute(sourcePath);
+      continue;
+    }
+
+    if (fs.existsSync(targetPath)) {
+      skipped++;
+      continue;
+    }
+
+    ensureDirectory(path.dirname(targetPath));
+    fs.renameSync(sourcePath, targetPath);
+    moved++;
+  }
+
+  removeDirectoryIfEmptyAbsolute(source);
+  return { moved, skipped };
+}
+
+function removeDirectoryIfEmptyAbsolute(directory) {
+  if (!fs.existsSync(directory) || !fs.statSync(directory).isDirectory()) {
+    return;
+  }
+
+  if (fs.readdirSync(directory).length === 0) {
+    fs.rmdirSync(directory);
   }
 }
 

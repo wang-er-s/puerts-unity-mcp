@@ -21,6 +21,7 @@ namespace PuertsUnityMcp.Editor
         {
             var created = new System.Collections.Generic.List<string>();
             var skipped = new System.Collections.Generic.List<string>();
+            UnityMcpProjectLayoutMigrator.MigrateLegacyLayout();
             var sourceRoot = ResolveSamplesRoot();
             var targetRoot = UnityMcpPaths.ProjectExtensionRoot;
             if (string.IsNullOrEmpty(sourceRoot) || !Directory.Exists(sourceRoot))

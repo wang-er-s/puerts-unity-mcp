@@ -645,6 +645,7 @@ namespace PuertsUnityMcp.Tests
 
             StringAssert.Contains("skipExtensionDemos", installScript);
             StringAssert.Contains("ensureExtensionDemos", cliLib);
+            StringAssert.Contains("migrateLegacyExtensionLayout", cliLib);
             StringAssert.Contains("ExtensionSamples~", cliLib);
             StringAssert.Contains("ensureExtensionDemos", demoScript);
         }
