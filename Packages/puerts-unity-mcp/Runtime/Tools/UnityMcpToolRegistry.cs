@@ -26,6 +26,39 @@ namespace PuertsUnityMcp
             }
         }
 
+        public bool TryRegister(IUnityMcpTool tool)
+        {
+            if (tool == null || string.IsNullOrEmpty(tool.Name))
+            {
+                throw new ArgumentException("Tool and tool name are required.");
+            }
+
+            lock (syncRoot)
+            {
+                if (tools.ContainsKey(tool.Name))
+                {
+                    return false;
+                }
+
+                tools.Add(tool.Name, tool);
+                Version++;
+                return true;
+            }
+        }
+
+        public bool Contains(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            lock (syncRoot)
+            {
+                return tools.ContainsKey(name);
+            }
+        }
+
         public bool Unregister(string name)
         {
             if (string.IsNullOrEmpty(name))

@@ -126,6 +126,22 @@ export function resolveDependencyPrefix(options = {}) {
   return `file:../${options.localPackageDirectoryName || "puerts-unity-mcp"}`;
 }
 
+function resolveExtensionDemoSourceRoot(options = {}) {
+  if (options.extensionDemoSourceRoot) {
+    return path.resolve(options.extensionDemoSourceRoot);
+  }
+
+  if (options.toolsRoot) {
+    return path.resolve(options.toolsRoot, "..", "ExtensionSamples~", "puerts-unity-mcp-extension");
+  }
+
+  if (options.packageRoot) {
+    return path.resolve(options.packageRoot, "Packages", "puerts-unity-mcp", "ExtensionSamples~", "puerts-unity-mcp-extension");
+  }
+
+  return path.resolve("Packages", "puerts-unity-mcp", "ExtensionSamples~", "puerts-unity-mcp-extension");
+}
+
 export function addPumToBuild(projectRoot, options = {}) {
   assertUnityProjectRoot(projectRoot);
   repairUnityPackageImportMetas(projectRoot, options);
@@ -234,6 +250,9 @@ export function installToUnityProject(options) {
       enablePackageTests: options.enablePackageTests,
       toolsRoot
     });
+    if (!options.skipExtensionDemos) {
+      ensureExtensionDemos(unityProjectRoot, { toolsRoot });
+    }
     return;
   }
 
@@ -247,7 +266,28 @@ export function installToUnityProject(options) {
     addPackageTestable(manifestPath);
   }
 
+  if (!options.skipExtensionDemos) {
+    ensureExtensionDemos(unityProjectRoot, { toolsRoot });
+  }
+
   console.log(`Installed PuerTS Unity MCP dependencies into ${manifestPath}`);
+}
+
+export function ensureExtensionDemos(projectRoot, options = {}) {
+  assertUnityProjectRoot(projectRoot);
+  const sourceRoot = resolveExtensionDemoSourceRoot(options);
+  const targetRoot = path.join(projectRoot, "puerts-unity-mcp-extension");
+  if (!fs.existsSync(sourceRoot)) {
+    throw new Error(`Extension demo source not found: ${sourceRoot}`);
+  }
+
+  const result = copyDirectoryOverlayMissing(sourceRoot, targetRoot);
+  console.log(`Extension demos ready under ${targetRoot}. Created ${result.created}, skipped ${result.skipped}.`);
+  return {
+    targetRoot,
+    created: result.created,
+    skipped: result.skipped
+  };
 }
 
 export async function vendorPuerts(options) {
@@ -967,6 +1007,16 @@ function copyDirectoryOverlay(source, target, ignoredNames = new Set()) {
   }
 }
 
+function copyDirectoryOverlayMissing(source, target, ignoredNames = new Set()) {
+  if (!fs.existsSync(source)) {
+    throw new Error(`Source directory not found: ${source}`);
+  }
+
+  const result = { created: 0, skipped: 0 };
+  copyRecursiveMissing(source, target, ignoredNames, result);
+  return result;
+}
+
 function copyRecursive(source, target, ignoredNames = new Set()) {
   const stats = fs.statSync(source);
   if (stats.isDirectory()) {
@@ -983,6 +1033,30 @@ function copyRecursive(source, target, ignoredNames = new Set()) {
 
   ensureDirectory(path.dirname(target));
   fs.copyFileSync(source, target);
+}
+
+function copyRecursiveMissing(source, target, ignoredNames, result) {
+  const stats = fs.statSync(source);
+  if (stats.isDirectory()) {
+    ensureDirectory(target);
+    for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+      if (ignoredNames.has(entry.name)) {
+        continue;
+      }
+
+      copyRecursiveMissing(path.join(source, entry.name), path.join(target, entry.name), ignoredNames, result);
+    }
+    return;
+  }
+
+  if (fs.existsSync(target)) {
+    result.skipped++;
+    return;
+  }
+
+  ensureDirectory(path.dirname(target));
+  fs.copyFileSync(source, target);
+  result.created++;
 }
 
 function ensureDirectory(directory) {

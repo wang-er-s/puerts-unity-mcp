@@ -1,5 +1,6 @@
 #if !UNITY_WEBGL || UNITY_EDITOR
 using System;
+using System.IO;
 using Puerts;
 using UnityEngine;
 
@@ -32,7 +33,7 @@ namespace PuertsUnityMcp
                 throw new DllNotFoundException("Android PuerTS native libraries are not available. Rebuild the player after running add-pum-to-build.mjs.");
             }
 
-            scriptEnv = new ScriptEnv(new BackendV8());
+            scriptEnv = new ScriptEnv(new BackendV8(new UnityMcpFileSystemScriptLoader()));
             InstallGlobals();
             initialized = true;
         }
@@ -208,6 +209,85 @@ namespace PuertsUnityMcp
                 .Replace("\"", "\\\"")
                 .Replace("\r", "\\r")
                 .Replace("\n", "\\n");
+        }
+
+        private sealed class UnityMcpFileSystemScriptLoader : ILoader, IModuleChecker, IResolvableLoader
+        {
+            private readonly DefaultLoader defaultLoader = new DefaultLoader();
+
+            public string Resolve(string specifier, string referrer)
+            {
+                var filePath = ResolveFilePath(specifier, referrer);
+                if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+                {
+                    return filePath;
+                }
+
+                return defaultLoader.FileExists(specifier) ? specifier : null;
+            }
+
+            public bool FileExists(string filepath)
+            {
+                var filePath = ResolveFilePath(filepath, null);
+                return (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+                    || defaultLoader.FileExists(filepath);
+            }
+
+            public string ReadFile(string filepath, out string debugpath)
+            {
+                var filePath = ResolveFilePath(filepath, null);
+                if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+                {
+                    debugpath = filePath;
+                    return File.ReadAllText(filePath);
+                }
+
+                return defaultLoader.ReadFile(filepath, out debugpath);
+            }
+
+            public bool IsESM(string filepath)
+            {
+                return string.IsNullOrEmpty(filepath)
+                    || !filepath.EndsWith(".cjs", StringComparison.OrdinalIgnoreCase);
+            }
+
+            private static string ResolveFilePath(string specifier, string referrer)
+            {
+                if (string.IsNullOrEmpty(specifier))
+                {
+                    return null;
+                }
+
+                try
+                {
+                    if (Uri.TryCreate(specifier, UriKind.Absolute, out var uri) && uri.IsFile)
+                    {
+                        return Path.GetFullPath(uri.LocalPath);
+                    }
+
+                    var normalized = specifier.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+                    if (Path.IsPathRooted(normalized))
+                    {
+                        return Path.GetFullPath(normalized);
+                    }
+
+                    var referrerPath = ResolveFilePath(referrer, null);
+                    if (!string.IsNullOrEmpty(referrerPath) && File.Exists(referrerPath))
+                    {
+                        var directory = Path.GetDirectoryName(referrerPath);
+                        if (!string.IsNullOrEmpty(directory))
+                        {
+                            return Path.GetFullPath(Path.Combine(directory, normalized));
+                        }
+                    }
+                }
+                catch
+                {
+                    return null;
+                }
+
+                return null;
+            }
         }
 
 #if UNITY_ANDROID && !UNITY_EDITOR

@@ -14,6 +14,7 @@ installToUnityProject({
   enablePackageTests: getBoolArg(args, ["enable-package-tests", "EnablePackageTests"], false),
   useProjectLocalPackage: getBoolArg(args, ["use-project-local-package", "UseProjectLocalPackage"], false),
   syncLocalPackage: getBoolArg(args, ["sync-local-package", "SyncLocalPackage"], false),
+  skipExtensionDemos: getBoolArg(args, ["skip-extension-demos", "SkipExtensionDemos"], false),
   localPackageDirectoryName: String(getArg(args, ["local-package-directory-name", "LocalPackageDirectoryName"], "puerts-unity-mcp")),
   toolsRoot: roots.toolsRoot
 });

@@ -10,8 +10,11 @@ const STATE_DIR_NAME = ".puerts-unity-mcp";
 const EXTENSION_DIR_NAME = "puerts-unity-mcp-extension";
 const EDITOR_DIR_NAME = "Editor";
 const RUNTIME_DIR_NAME = "Runtime";
-const EDITOR_TOOLS_DIR_NAME = "editor-tools";
-const RUNTIME_TOOLS_DIR_NAME = "runtime-tools";
+const JS_DIR_NAME = "js";
+const EDITOR_TOOLS_DIR_NAME = "editor";
+const RUNTIME_TOOLS_DIR_NAME = "runtime";
+const LEGACY_EDITOR_TOOLS_DIR_NAME = "editor-tools";
+const LEGACY_RUNTIME_TOOLS_DIR_NAME = "runtime-tools";
 const SKILLS_DIR_NAME = "skills";
 const EDITOR_CONFIG_FILE_NAME = "editor-mcp-config.json";
 const LEGACY_EDITOR_CONFIG_FILE_NAME = "config.json";
@@ -29,7 +32,53 @@ const AGENT_INSTRUCTIONS =
   "For Editor scene/window context, use editor.hierarchy.get or get-hierarchy to export hierarchy JSON, editor.window.screenshot or screenshot to capture EditorWindow PNGs, and editor.window.focus or focus-window to bring Unity forward. " +
   "For phone UI automation, observe before acting with screen.screenshot, runtime.ui.snapshot, runtime.ui.find, and runtime.ui.raycast, then click with runtime.ui.click or input.tap. " +
   "For performance hotspot diagnosis, use the Editor MCP Profiler tools: editor.profiler.targets.list, editor.profiler.connect when needed, then editor.profiler.capture or performance.hotspot.report. These record through the Unity Editor Profiler, can analyze Editor or attached phone/player Profiler data, and write JSON/CSV/Markdown reports under .puerts-unity-mcp/perf-reports. " +
-  "Move stable project-specific flows into puerts-unity-mcp-extension/Editor/editor-tools or puerts-unity-mcp-extension/Runtime/runtime-tools instead of repeatedly generating one-off eval scripts.";
+  "Move stable project-specific flows into puerts-unity-mcp-extension/js/editor or puerts-unity-mcp-extension/js/runtime instead of repeatedly generating one-off eval scripts. " +
+  "Project JS MCP tools use a *.tool.json manifest next to an .mjs module; export execute(argsJson, contextJson), parse argsJson, and return JSON-serializable data. " +
+  "Project C# MCP tools live in local extension packages, implement IUnityMcpToolProvider, and are discovered from loaded Unity assemblies into the same tools/list as built-ins. " +
+  "If the extension folder is empty, seed demos with Tools~/create-extension-demos.mjs or the Unity menu PuerTS Unity MCP/Create Extension Demos. " +
+  "Put project authoring guidance in puerts-unity-mcp-extension/skills/*.md so future agents can load it with agent.extension.skills.list, editor.skills.list, or runtime.skills.list.";
+
+const EXTENSION_AUTHORING_GUIDE = [
+  "Project extension layout:",
+  "  puerts-unity-mcp-extension/js/editor   - Editor-side JavaScript MCP tools",
+  "  puerts-unity-mcp-extension/js/runtime  - Runtime, Play Mode, phone/player JavaScript MCP tools",
+  "  puerts-unity-mcp-extension/skills      - Agent skill documents with project-specific rules",
+  "  puerts-unity-mcp-extension/Packages    - Optional project C# extension packages referenced from Packages/manifest.json",
+  "",
+  "C# extension rule:",
+  "  Keep the core puerts-unity-mcp package project-agnostic. Put project C# tools in a separate local package that references PuertsUnityMcp and project assemblies such as HotFix, then add/remove that package dependency from Unity Packages/manifest.json.",
+  "  Implement IUnityMcpToolProvider. Editor and Runtime hosts discover loaded providers and add their tools to the same tools/list as built-ins.",
+  "  Prefer context.TryRegister(...) and unique names such as game.*; extension tools do not silently replace an existing tool name.",
+  "  The demo C# package under puerts-unity-mcp-extension/Packages/puerts-unity-mcp-extension-demo is scaffolded; add it to Unity Packages/manifest.json before expecting its C# tools in tools/list.",
+  "",
+  "Demos:",
+  "  Run node puerts-unity-mcp/Packages/puerts-unity-mcp/Tools~/create-extension-demos.mjs --unity-project-root <UnityProject> to seed Editor JS, Runtime JS, skill, and C# package examples without overwriting existing files.",
+  "",
+  "JavaScript tool format:",
+  "  1. Create <tool-name>.tool.json beside <tool-name>.mjs.",
+  "  2. The manifest must include name, description, inputSchemaJson, and optional modulePath/functionName.",
+  "  3. The module exports execute(argsJson, contextJson). Parse argsJson yourself and return JSON-serializable data.",
+  "  4. Use CS.UnityEngine and CS.UnityEditor when available. Use __unity_mcp.invokeStatic/getStatic/getStaticPath/setStatic/typeExists when reflection is safer or wrappers are missing.",
+  "  5. Editor tools should not generate C# for routine work, so they do not trigger domain reload.",
+  "",
+  "Minimal manifest:",
+  "{",
+  "  \"name\": \"project.example\",",
+  "  \"description\": \"Run a project-specific operation.\",",
+  "  \"inputSchemaJson\": \"{\\\"type\\\":\\\"object\\\",\\\"additionalProperties\\\":true}\",",
+  "  \"modulePath\": \"project-example.mjs\",",
+  "  \"functionName\": \"execute\"",
+  "}",
+  "",
+  "Minimal module:",
+  "export function execute(argsJson, contextJson) {",
+  "  const args = JSON.parse(argsJson || '{}');",
+  "  const context = JSON.parse(contextJson || '{}');",
+  "  return { ok: true, endpointKind: context.endpointKind, args };",
+  "}",
+  "",
+  "For durable project behavior, also create a skill in puerts-unity-mcp-extension/skills, for example project-automation.md, with frontmatter name/description and concrete project conventions."
+].join("\n");
 
 let lastRemoteToolNames = null;
 
@@ -407,6 +456,11 @@ function localProxyToolDescriptors() {
       inputSchema: objectSchema()
     },
     {
+      name: "agent.extension.instructions",
+      description: "Return authoring instructions for project C#/JavaScript extensions and skills.",
+      inputSchema: objectSchema()
+    },
+    {
       name: "agent.extension.files.list",
       description: "List files under the local puerts-unity-mcp-extension directory.",
       inputSchema: objectSchema({
@@ -573,9 +627,19 @@ function selectedLocalScriptScope(context) {
 }
 
 function scriptToolRoot(extensionRoot, scope) {
+  return scriptToolRoots(extensionRoot, scope)[0];
+}
+
+function scriptToolRoots(extensionRoot, scope) {
   return scope === "runtime"
-    ? path.join(extensionRoot, RUNTIME_DIR_NAME, RUNTIME_TOOLS_DIR_NAME)
-    : path.join(extensionRoot, EDITOR_DIR_NAME, EDITOR_TOOLS_DIR_NAME);
+    ? [
+      path.join(extensionRoot, JS_DIR_NAME, RUNTIME_TOOLS_DIR_NAME),
+      path.join(extensionRoot, RUNTIME_DIR_NAME, LEGACY_RUNTIME_TOOLS_DIR_NAME)
+    ]
+    : [
+      path.join(extensionRoot, JS_DIR_NAME, EDITOR_TOOLS_DIR_NAME),
+      path.join(extensionRoot, EDITOR_DIR_NAME, LEGACY_EDITOR_TOOLS_DIR_NAME)
+    ];
 }
 
 function isToolManifestFile(filePath) {
@@ -638,7 +702,7 @@ function normalizeScriptToolManifest(directoryRoot, manifestPath, manifest, scop
     name: String(manifest.name).trim(),
     description: isNonEmptyString(manifest.description)
       ? String(manifest.description)
-      : "Project JavaScript MCP tool loaded from puerts-unity-mcp-extension.",
+      : "Project JavaScript MCP tool loaded from puerts-unity-mcp-extension/js.",
     inputSchema: parseSchema(manifest),
     inputSchemaJson: isNonEmptyString(manifest.inputSchemaJson) ? manifest.inputSchemaJson : JSON.stringify(parseSchema(manifest)),
     modulePath: path.resolve(modulePath),
@@ -652,18 +716,21 @@ function normalizeScriptToolManifest(directoryRoot, manifestPath, manifest, scop
 }
 
 function loadScriptToolManifests(extensionRoot, scope) {
-  const directoryRoot = scriptToolRoot(extensionRoot, scope);
   const manifests = [];
-  const files = walkFiles(directoryRoot, true, isToolManifestFile);
-  for (const filePath of files) {
-    try {
-      const manifest = JSON.parse(stripBom(fs.readFileSync(filePath, "utf8")));
-      const normalized = normalizeScriptToolManifest(directoryRoot, filePath, manifest, scope, extensionRoot);
-      if (normalized) {
-        manifests.push(normalized);
+  const seen = new Set();
+  for (const directoryRoot of scriptToolRoots(extensionRoot, scope)) {
+    const files = walkFiles(directoryRoot, true, isToolManifestFile);
+    for (const filePath of files) {
+      try {
+        const manifest = JSON.parse(stripBom(fs.readFileSync(filePath, "utf8")));
+        const normalized = normalizeScriptToolManifest(directoryRoot, filePath, manifest, scope, extensionRoot);
+        if (normalized && !seen.has(normalized.name)) {
+          seen.add(normalized.name);
+          manifests.push(normalized);
+        }
+      } catch (error) {
+        process.stderr.write(`[puerts-unity-mcp] Failed to parse local script tool manifest ${filePath}: ${error.message}\n`);
       }
-    } catch (error) {
-      process.stderr.write(`[puerts-unity-mcp] Failed to parse local script tool manifest ${filePath}: ${error.message}\n`);
     }
   }
 
@@ -685,6 +752,7 @@ function loadScriptToolManifestsForRequest(args) {
   return {
     action: "agent.extension.scriptTools.list",
     extensionRoot: context.extensionRoot,
+    directoryRoots: scopes.flatMap(scope => scriptToolRoots(context.extensionRoot, scope)),
     count: tools.length,
     tools
   };
@@ -843,7 +911,21 @@ function localExtensionInfo() {
     activeScriptToolScope: selectedLocalScriptScope(context),
     editorToolsRoot: scriptToolRoot(context.extensionRoot, "editor"),
     runtimeToolsRoot: scriptToolRoot(context.extensionRoot, "runtime"),
+    editorToolRoots: scriptToolRoots(context.extensionRoot, "editor"),
+    runtimeToolRoots: scriptToolRoots(context.extensionRoot, "runtime"),
     skillsRoot: path.join(context.extensionRoot, SKILLS_DIR_NAME)
+  };
+}
+
+function extensionAuthoringInstructions() {
+  const context = resolveProxyContext(false);
+  return {
+    action: "agent.extension.instructions",
+    extensionRoot: context.extensionRoot,
+    editorToolsRoot: scriptToolRoot(context.extensionRoot, "editor"),
+    runtimeToolsRoot: scriptToolRoot(context.extensionRoot, "runtime"),
+    skillsRoot: path.join(context.extensionRoot, SKILLS_DIR_NAME),
+    instructions: EXTENSION_AUTHORING_GUIDE
   };
 }
 
@@ -1042,6 +1124,8 @@ function localToolResult(name, args) {
   switch (name) {
     case "agent.extension.info":
       return localExtensionInfo();
+    case "agent.extension.instructions":
+      return extensionAuthoringInstructions();
     case "agent.extension.files.list":
       return listExtensionFiles(args);
     case "agent.extension.file.read":

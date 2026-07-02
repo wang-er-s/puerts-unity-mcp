@@ -146,12 +146,12 @@ namespace PuertsUnityMcp.Editor
                 return Task.FromResult(editorScriptHost.Eval(PrepareJavaScript(args.code, args.mode), args.chunkName, true));
             }));
 
-            tools.Register(new DelegateUnityMcpTool("editor.scriptTools.list", "List project JavaScript MCP tools loaded from puerts-unity-mcp-extension/Editor/editor-tools.", JsonSchemas.Object(), (ctx, args) =>
+            tools.Register(new DelegateUnityMcpTool("editor.scriptTools.list", "List project JavaScript MCP tools loaded from puerts-unity-mcp-extension/js/editor.", JsonSchemas.Object(), (ctx, args) =>
             {
                 return Task.FromResult(UnityJson.ToJson(BuildEditorScriptToolListResult("editor.scriptTools.list")));
             }));
 
-            tools.Register(new DelegateUnityMcpTool("editor.scriptTools.reload", "Reload project JavaScript MCP tools from puerts-unity-mcp-extension/Editor/editor-tools.", JsonSchemas.Object(), (ctx, args) =>
+            tools.Register(new DelegateUnityMcpTool("editor.scriptTools.reload", "Reload project JavaScript MCP tools from puerts-unity-mcp-extension/js/editor.", JsonSchemas.Object(), (ctx, args) =>
             {
                 ResetEditorScriptHost();
                 RegisterEditorResourceScriptTools();
@@ -281,6 +281,7 @@ namespace PuertsUnityMcp.Editor
 
             RegisterEditorSceneAndWindowTools();
             RegisterPerformanceTools();
+            UnityMcpToolProviderDiscovery.RegisterLoadedAssemblyProviders(this, tools);
             RegisterEditorResourceScriptTools();
         }
 
@@ -292,7 +293,7 @@ namespace PuertsUnityMcp.Editor
             }
 
             editorResourceScriptToolNames.Clear();
-            var manifests = UnityMcpResourceScriptTools.LoadManifests(UnityMcpPaths.EditorToolsRoot());
+            var manifests = UnityMcpResourceScriptTools.LoadManifests(UnityMcpPaths.EditorToolRoots());
             for (var i = 0; i < manifests.Length; i++)
             {
                 var manifest = manifests[i];
@@ -301,22 +302,31 @@ namespace PuertsUnityMcp.Editor
                     continue;
                 }
 
-                tools.Register(new DelegateUnityMcpTool(manifest.name, manifest.description, manifest.inputSchemaJson, (ctx, args) =>
-                    Task.FromResult(ExecuteEditorResourceScriptTool(manifest, args))));
-                editorResourceScriptToolNames.Add(manifest.name);
+                var tool = new DelegateUnityMcpTool(manifest.name, manifest.description, manifest.inputSchemaJson, (ctx, args) =>
+                    Task.FromResult(ExecuteEditorResourceScriptTool(manifest, args)));
+                if (tools.TryRegister(tool))
+                {
+                    editorResourceScriptToolNames.Add(manifest.name);
+                }
+                else
+                {
+                    Debug.LogWarning("[UnityMCP] Skipped project Editor JavaScript MCP tool because the name already exists: " + manifest.name);
+                }
             }
         }
 
         private UnityMcpScriptToolListResult BuildEditorScriptToolListResult(string action)
         {
             var toolRoot = UnityMcpPaths.EditorToolsRoot();
-            var manifests = UnityMcpResourceScriptTools.LoadManifests(toolRoot);
+            var toolRoots = UnityMcpPaths.EditorToolRoots();
+            var manifests = UnityMcpResourceScriptTools.LoadManifests(toolRoots);
             return new UnityMcpScriptToolListResult
             {
                 action = action,
                 targetId = EndpointId,
                 resourceRoot = toolRoot,
                 directoryRoot = toolRoot,
+                directoryRoots = toolRoots,
                 tools = manifests,
                 count = manifests.Length
             };

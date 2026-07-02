@@ -35,7 +35,7 @@
 | Editor and Player screenshots | Capture Unity EditorWindow tabs such as Game, Scene, Inspector, Console, or Hierarchy, and capture runtime Player/phone screens. |
 | UI testing automation | Inspect visible UGUI controls with snapshot/find/raycast tools and click by text, path, instanceId, or screen coordinates for repeatable QA flows. |
 | Profiler performance reports | Collect Unity Editor Profiler data for the Editor or attached Player/phone targets and generate hotspot reports with frame, marker, and GC.Alloc evidence. |
-| C# and JavaScript MCP tools | Core tools are C#; project tools can also be loaded from `puerts-unity-mcp-extension/Editor/editor-tools` and `Runtime/runtime-tools`. |
+| C# and JavaScript MCP tools | Core tools are C#; project JavaScript tools can also be loaded from `puerts-unity-mcp-extension/js/editor` and `js/runtime`. |
 | Domain reload recovery | The Editor endpoint persists operation state, compile results, reload hints, and restarts itself after Unity domain reloads. |
 
 ## What It Controls
@@ -91,6 +91,14 @@ The Unity project receives:
 <UnityProject>/puerts-unity-mcp-extension
 <UnityProject>/.puerts-unity-mcp
 ```
+
+To seed the demo extension layout as well:
+
+```bash
+node Packages/puerts-unity-mcp/Tools~/create-extension-demos.mjs --unity-project-root <UnityProject>
+```
+
+`install-to-unity-project.mjs` also creates the same demos by default; pass `--skip-extension-demos` for a clean install.
 
 ### Register Local UPM Packages
 
@@ -194,12 +202,13 @@ When a domain reload is unavoidable because project C# changed, the Editor MCP r
 
 ## MCP Tool Extension
 
-Core tools are implemented in C# and registered by the Editor or Runtime host. Project tools can be implemented in JavaScript and loaded from the Unity project extension folder.
+Core tools are implemented in C# and registered by the Editor or Runtime host. Project tools can be implemented in JavaScript or C# and appear in the same `tools/list` as built-ins. Project extensions do not silently replace an existing tool name; use a team prefix such as `project.*` or `game.*`.
 
 ```text
 <UnityProject>/puerts-unity-mcp-extension
-  Editor/editor-tools      Editor-side JavaScript MCP tools
-  Runtime/runtime-tools    Runtime/player JavaScript MCP tools
+  js/editor                Editor-side JavaScript MCP tools
+  js/runtime               Runtime/player JavaScript MCP tools
+  Packages/<package>       Optional project C# MCP extension packages
   skills                   Project skills for agents
 ```
 
@@ -211,18 +220,65 @@ Each JavaScript MCP tool has a manifest that points to a module:
   "description": "Return the active Unity scene through the runtime PuerTS VM.",
   "modulePath": "active-scene.mjs",
   "functionName": "execute",
-  "inputSchema": {
-    "type": "object",
-    "additionalProperties": true
-  }
+  "inputSchemaJson": "{\"type\":\"object\",\"additionalProperties\":true}"
 }
 ```
 
 Runtime JavaScript tools execute through `runtime.js.eval`, so the same tool model works for Play Mode and real phones.
 
+The module should export a JSON-shaped function. Future agents can discover the same convention from MCP `initialize` instructions or the stdio proxy tool `agent.extension.instructions`.
+
+```js
+export function execute(argsJson, contextJson) {
+  const args = JSON.parse(argsJson || "{}");
+  const context = JSON.parse(contextJson || "{}");
+  return {
+    ok: true,
+    endpointKind: context.endpointKind,
+    args
+  };
+}
+```
+
+The install script and Unity menu can copy a demo extension layout without overwriting existing files:
+
+```bash
+node <repo>/Packages/puerts-unity-mcp/Tools~/create-extension-demos.mjs --unity-project-root <UnityProject>
+```
+
+You can also run `PuerTS Unity MCP/Create Extension Demos` in Unity. The demo includes:
+
+- `js/editor/demo-editor-scene.*`: an Editor JS tool that reads the active scene and Build Settings.
+- `js/runtime/demo-runtime-screen.*`: a Runtime JS tool for Play Mode or phone/player screen and scene data.
+- `skills/puerts-unity-mcp-extension-demo.md`: agent guidance for writing project extensions.
+- `Packages/puerts-unity-mcp-extension-demo`: a local C# provider package sample. To enable the C# demo, add `"puerts-unity-mcp-extension-demo": "file:../puerts-unity-mcp-extension/Packages/puerts-unity-mcp-extension-demo"` to Unity `Packages/manifest.json`.
+
+Put project-specific authoring rules, gameplay workflows, and HotFix naming conventions into `puerts-unity-mcp-extension/skills/*.md`; agents can list and load them through `agent.extension.skills.list`, `editor.skills.list`, or `runtime.skills.list`.
+
+Project C# MCP extensions should live in a separate local package under `puerts-unity-mcp-extension/Packages/<project-extension-package>`. That package may reference `PuertsUnityMcp` and project assemblies such as HotFix; the core `puerts-unity-mcp` package stays project-agnostic and build scripts can enable or remove the C# extension by editing Unity `Packages/manifest.json`. C# extensions implement `IUnityMcpToolProvider` and are discovered from loaded assemblies when the Editor or Runtime host starts:
+
+```csharp
+using System.Threading.Tasks;
+using PuertsUnityMcp;
+
+public sealed class ProjectMcpTools : IUnityMcpToolProvider
+{
+    public string EndpointKind => "runtime"; // editor, runtime/player, or all
+
+    public void RegisterTools(UnityMcpToolProviderContext context)
+    {
+        context.TryRegister(new DelegateUnityMcpTool(
+            "game.status",
+            "Return project runtime state.",
+            JsonSchemas.Object(),
+            (ctx, args) => Task.FromResult("{\"ok\":true}")));
+    }
+}
+```
+
 ## Built-in MCP Tools
 
-`tools/list` returns the tools currently available on the connected endpoint. The tables below list the package-provided C# tools. Project JavaScript tools are loaded in addition from `puerts-unity-mcp-extension`; project-specific tools such as `game.*` are not universal built-ins.
+`tools/list` returns the tools currently available on the connected endpoint. The tables below list the package-provided C# tools. Project JavaScript tools and C# provider tools are loaded in addition from the extension folder / loaded assemblies; project-specific tools such as `game.*` are not universal built-ins.
 
 ### Editor MCP
 
@@ -242,7 +298,7 @@ Runtime JavaScript tools execute through `runtime.js.eval`, so the same tool mod
 | `editor.profiler.connect` | Best-effort helper to switch the Unity Editor Profiler to Editor or a player/phone target. |
 | `editor.profiler.capture` | Record through the Unity Editor Profiler, then analyze raw frame data into JSON/CSV/Markdown under `.puerts-unity-mcp/perf-reports`. |
 | `editor.profiler.analyze` | Analyze frames already available in the Unity Editor Profiler without starting a new recording. |
-| `editor.scriptTools.list` | List project JavaScript tools from `puerts-unity-mcp-extension/Editor/editor-tools`. |
+| `editor.scriptTools.list` | List project JavaScript tools from `puerts-unity-mcp-extension/js/editor`. |
 | `editor.scriptTools.reload` | Reload Editor project JavaScript tools. |
 | `editor.skills.list` | List project skills from `puerts-unity-mcp-extension/skills`. |
 | `editor.skill.load` | Load one project skill. |
@@ -271,7 +327,7 @@ These tools are available in Editor Play Mode, Android, iOS, and standalone Play
 | `targets.list` | Alias for `runtime.targets.list`. |
 | `runtime.js.eval` | Execute JavaScript inside the Runtime PuerTS VM. |
 | `runtime.reflection.invoke` | Invoke a static C# method through the reflection gateway. |
-| `runtime.scriptTools.list` | List project JavaScript tools from `puerts-unity-mcp-extension/Runtime/runtime-tools`. |
+| `runtime.scriptTools.list` | List project JavaScript tools from `puerts-unity-mcp-extension/js/runtime`. |
 | `runtime.scriptTools.reload` | Reload Runtime project JavaScript tools. |
 | `runtime.skills.list` | List project skills. |
 | `runtime.skill.load` | Load one project skill. |
@@ -380,7 +436,7 @@ Then use runtime MCP tools such as:
 - `runtime.ui.click`
 - `input.tap`
 
-For stable game workflows, put project-specific logic into `puerts-unity-mcp-extension/Runtime/runtime-tools` instead of repeatedly generating one-off eval scripts.
+For stable game workflows, put project-specific logic into `puerts-unity-mcp-extension/js/runtime` instead of repeatedly generating one-off eval scripts.
 
 ### Profiler Hotspot Workflow
 
@@ -429,8 +485,8 @@ Persistent project configuration:
 | `puerts-unity-mcp-extension/mobile-mcp-config.json` | Runtime/player config copied into builds |
 | `Packages/puerts-unity-mcp/Runtime/Plugins/Android` | Bundled MCP Android permission library; PuerTS native libraries come from the upstream UPM packages under `third_party/puerts` |
 | `Assets/puerts-unity-mcp/Runtime/Generated/Plugins/puerts_il2cpp` | Generated PuerTS IL2CPP bridge files for the current Unity project; ignore/regenerate instead of committing as reusable package source |
-| `puerts-unity-mcp-extension/Editor/editor-tools` | Project Editor JS MCP tools |
-| `puerts-unity-mcp-extension/Runtime/runtime-tools` | Project Runtime JS MCP tools |
+| `puerts-unity-mcp-extension/js/editor` | Project Editor JS MCP tools |
+| `puerts-unity-mcp-extension/js/runtime` | Project Runtime JS MCP tools |
 | `puerts-unity-mcp-extension/skills` | Project skills for agents |
 
 Temporary state and operation data:

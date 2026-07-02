@@ -17,7 +17,11 @@ namespace PuertsUnityMcp
             "For Editor scene/window context, use editor.hierarchy.get or get-hierarchy to export hierarchy JSON, editor.window.screenshot or screenshot to capture EditorWindow PNGs, and editor.window.focus or focus-window to bring Unity forward. " +
             "For phone UI automation, observe before acting with screen.screenshot, runtime.ui.snapshot, runtime.ui.find, and runtime.ui.raycast, then click with runtime.ui.click or input.tap. " +
             "For performance hotspot diagnosis, use the Editor MCP Profiler tools: editor.profiler.targets.list, editor.profiler.connect when needed, then editor.profiler.capture or performance.hotspot.report. These record through the Unity Editor Profiler, can analyze Editor or attached phone/player Profiler data, and write JSON/CSV/Markdown reports under .puerts-unity-mcp/perf-reports. " +
-            "Move stable project-specific flows into puerts-unity-mcp-extension/Editor/editor-tools or puerts-unity-mcp-extension/Runtime/runtime-tools instead of repeatedly generating one-off eval scripts.";
+            "Move stable project-specific flows into puerts-unity-mcp-extension/js/editor or puerts-unity-mcp-extension/js/runtime instead of repeatedly generating one-off eval scripts. " +
+            "Project JS MCP tools use a *.tool.json manifest next to an .mjs module; export execute(argsJson, contextJson), parse argsJson, and return JSON-serializable data. " +
+            "Project C# MCP tools live in extension packages, implement IUnityMcpToolProvider, and are discovered from loaded assemblies into the same tools/list as built-ins. " +
+            "If the extension folder is empty, seed demos with Tools~/create-extension-demos.mjs or the Unity menu PuerTS Unity MCP/Create Extension Demos. " +
+            "Put project authoring guidance in puerts-unity-mcp-extension/skills/*.md so future agents can load it with agent.extension.skills.list, editor.skills.list, or runtime.skills.list.";
 
         private readonly IUnityMcpEndpoint endpoint;
 

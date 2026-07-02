@@ -162,6 +162,14 @@ namespace PuertsUnityMcp
             }
         }
 
+        public static string JavaScriptExtensionRoot
+        {
+            get
+            {
+                return Path.Combine(ProjectExtensionRoot, UnityMcpConstants.JavaScriptDirectoryName);
+            }
+        }
+
         public static string ProjectConfigPath
         {
             get
@@ -229,12 +237,40 @@ namespace PuertsUnityMcp
 
         public static string EditorToolsRoot()
         {
-            return Path.Combine(EditorExtensionRoot, UnityMcpConstants.EditorToolsDirectoryName);
+            return Path.Combine(JavaScriptExtensionRoot, UnityMcpConstants.EditorToolsDirectoryName);
         }
 
         public static string RuntimeToolsRoot()
         {
-            return Path.Combine(RuntimeExtensionRoot, UnityMcpConstants.RuntimeToolsDirectoryName);
+            return Path.Combine(JavaScriptExtensionRoot, UnityMcpConstants.RuntimeToolsDirectoryName);
+        }
+
+        public static string LegacyEditorToolsRoot()
+        {
+            return Path.Combine(EditorExtensionRoot, UnityMcpConstants.LegacyEditorToolsDirectoryName);
+        }
+
+        public static string LegacyRuntimeToolsRoot()
+        {
+            return Path.Combine(RuntimeExtensionRoot, UnityMcpConstants.LegacyRuntimeToolsDirectoryName);
+        }
+
+        public static string[] EditorToolRoots()
+        {
+            return new[]
+            {
+                EditorToolsRoot(),
+                LegacyEditorToolsRoot()
+            };
+        }
+
+        public static string[] RuntimeToolRoots()
+        {
+            return new[]
+            {
+                RuntimeToolsRoot(),
+                LegacyRuntimeToolsRoot()
+            };
         }
 
         public static string SkillsRoot()

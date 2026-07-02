@@ -78,6 +78,10 @@ namespace PuertsUnityMcp.Tests
             StringAssert.Contains("performance.hotspot.report", response);
             StringAssert.Contains("editor.profiler.capture", response);
             StringAssert.Contains("puerts-unity-mcp-extension", response);
+            StringAssert.Contains("puerts-unity-mcp-extension/js/editor", response);
+            StringAssert.Contains("*.tool.json", response);
+            StringAssert.Contains("IUnityMcpToolProvider", response);
+            StringAssert.Contains("create-extension-demos.mjs", response);
             Assert.False(response.Contains("\"error\""), response);
         }
 
@@ -98,6 +102,11 @@ namespace PuertsUnityMcp.Tests
             StringAssert.Contains("screen.screenshot", proxy);
             StringAssert.Contains("performance.hotspot.report", proxy);
             StringAssert.Contains("editor.profiler.capture", proxy);
+            StringAssert.Contains("agent.extension.instructions", proxy);
+            StringAssert.Contains("puerts-unity-mcp-extension/js/editor", proxy);
+            StringAssert.Contains("*.tool.json", proxy);
+            StringAssert.Contains("IUnityMcpToolProvider", proxy);
+            StringAssert.Contains("create-extension-demos.mjs", proxy);
         }
 
         [Test]
@@ -192,6 +201,42 @@ namespace PuertsUnityMcp.Tests
             Assert.False(json.Contains("\"Name\""), json);
             Assert.False(json.Contains("\"Description\""), json);
             Assert.False(json.Contains("\"InputSchemaJson\""), json);
+        }
+
+        [Test]
+        public void ToolRegistryTryRegisterDoesNotOverwriteExistingTool()
+        {
+            var endpoint = new FakeEndpoint();
+            endpoint.Tools.Register(new DelegateUnityMcpTool("same.tool", "Original.", JsonSchemas.Object(), (ctx, args) =>
+                Task.FromResult("{\"source\":\"original\"}")));
+
+            var added = endpoint.Tools.TryRegister(new DelegateUnityMcpTool("same.tool", "Duplicate.", JsonSchemas.Object(), (ctx, args) =>
+                Task.FromResult("{\"source\":\"duplicate\"}")));
+
+            Assert.False(added);
+            Assert.True(endpoint.Tools.Contains("same.tool"));
+            var response = Handle(endpoint, "{\"jsonrpc\":\"2.0\",\"id\":\"same\",\"method\":\"tools/call\",\"params\":{\"name\":\"same.tool\",\"arguments\":{}}}");
+            StringAssert.Contains("\"source\":\"original\"", response);
+        }
+
+        [Test]
+        public void CSharpToolProvidersAreDiscoveredWithoutReplacingBuiltIns()
+        {
+            var endpoint = new FakeEndpoint();
+            endpoint.Tools.Register(new DelegateUnityMcpTool("test.extension.duplicate", "Built-in duplicate.", JsonSchemas.Object(), (ctx, args) =>
+                Task.FromResult("{\"source\":\"builtin\"}")));
+
+            var result = UnityMcpToolProviderDiscovery.RegisterLoadedAssemblyProviders(endpoint, endpoint.Tools);
+
+            Assert.GreaterOrEqual(result.providerCount, 1);
+            Assert.True(endpoint.Tools.Contains("test.extension.csharp"));
+            Assert.True(endpoint.Tools.Contains("test.extension.duplicate"));
+
+            var uniqueResponse = Handle(endpoint, "{\"jsonrpc\":\"2.0\",\"id\":\"csharp\",\"method\":\"tools/call\",\"params\":{\"name\":\"test.extension.csharp\",\"arguments\":{}}}");
+            StringAssert.Contains("\"source\":\"provider\"", uniqueResponse);
+
+            var duplicateResponse = Handle(endpoint, "{\"jsonrpc\":\"2.0\",\"id\":\"dup\",\"method\":\"tools/call\",\"params\":{\"name\":\"test.extension.duplicate\",\"arguments\":{}}}");
+            StringAssert.Contains("\"source\":\"builtin\"", duplicateResponse);
         }
 
         [Test]
@@ -379,11 +424,17 @@ namespace PuertsUnityMcp.Tests
                 Path.Combine(extensionRoot, "Runtime", "runtime-config.json"),
                 UnityMcpPaths.LegacyRuntimeConfigPath);
             Assert.AreEqual(
-                Path.Combine(extensionRoot, "Editor", "editor-tools"),
+                Path.Combine(extensionRoot, "js", "editor"),
                 UnityMcpPaths.EditorToolsRoot());
             Assert.AreEqual(
-                Path.Combine(extensionRoot, "Runtime", "runtime-tools"),
+                Path.Combine(extensionRoot, "js", "runtime"),
                 UnityMcpPaths.RuntimeToolsRoot());
+            Assert.AreEqual(
+                Path.Combine(extensionRoot, "Editor", "editor-tools"),
+                UnityMcpPaths.LegacyEditorToolsRoot());
+            Assert.AreEqual(
+                Path.Combine(extensionRoot, "Runtime", "runtime-tools"),
+                UnityMcpPaths.LegacyRuntimeToolsRoot());
             Assert.AreEqual(
                 Path.Combine(extensionRoot, "skills"),
                 UnityMcpPaths.SkillsRoot());
@@ -494,7 +545,7 @@ namespace PuertsUnityMcp.Tests
         public void ScriptToolManifestsLoadFromFilesystemDirectory()
         {
             var root = Path.Combine(Application.temporaryCachePath, "puerts-unity-mcp-tests", Guid.NewGuid().ToString("N"));
-            var toolRoot = Path.Combine(root, "Editor", "editor-tools");
+            var toolRoot = Path.Combine(root, "js", "editor");
             try
             {
                 Directory.CreateDirectory(toolRoot);
@@ -520,6 +571,82 @@ namespace PuertsUnityMcp.Tests
                     Directory.Delete(root, true);
                 }
             }
+        }
+
+        [Test]
+        public void ScriptToolManifestsPreferNewJsExtensionPathOverLegacyPath()
+        {
+            var root = Path.Combine(Application.temporaryCachePath, "puerts-unity-mcp-tests", Guid.NewGuid().ToString("N"));
+            var newRoot = Path.Combine(root, "js", "editor");
+            var legacyRoot = Path.Combine(root, "Editor", "editor-tools");
+            try
+            {
+                Directory.CreateDirectory(newRoot);
+                Directory.CreateDirectory(legacyRoot);
+                File.WriteAllText(
+                    Path.Combine(newRoot, "sample.tool.json"),
+                    "{\"name\":\"sample.tool\",\"description\":\"New tool.\",\"modulePath\":\"sample.mjs\"}",
+                    System.Text.Encoding.UTF8);
+                File.WriteAllText(Path.Combine(newRoot, "sample.mjs"), "export function execute() { return {}; }", System.Text.Encoding.UTF8);
+                File.WriteAllText(
+                    Path.Combine(legacyRoot, "sample.tool.json"),
+                    "{\"name\":\"sample.tool\",\"description\":\"Legacy duplicate.\",\"modulePath\":\"sample.mjs\"}",
+                    System.Text.Encoding.UTF8);
+                File.WriteAllText(Path.Combine(legacyRoot, "sample.mjs"), "export function execute() { return {}; }", System.Text.Encoding.UTF8);
+
+                var manifests = UnityMcpResourceScriptTools.LoadManifests(new[] { newRoot, legacyRoot });
+
+                Assert.AreEqual(1, manifests.Length);
+                Assert.AreEqual("New tool.", manifests[0].description);
+                Assert.AreEqual(Path.GetFullPath(Path.Combine(newRoot, "sample.mjs")), manifests[0].modulePath);
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+        }
+
+        [Test]
+        public void ExtensionDemoTemplatesShipWithJavaScriptSkillAndCSharpPackage()
+        {
+            var packageRoot = ResolvePackageRootForTest();
+            var demoRoot = Path.Combine(packageRoot, "ExtensionSamples~", "puerts-unity-mcp-extension");
+
+            Assert.True(File.Exists(Path.Combine(demoRoot, "js", "editor", "demo-editor-scene.tool.json")));
+            Assert.True(File.Exists(Path.Combine(demoRoot, "js", "editor", "demo-editor-scene.mjs")));
+            Assert.True(File.Exists(Path.Combine(demoRoot, "js", "runtime", "demo-runtime-screen.tool.json")));
+            Assert.True(File.Exists(Path.Combine(demoRoot, "js", "runtime", "demo-runtime-screen.mjs")));
+            Assert.True(File.Exists(Path.Combine(demoRoot, "skills", "puerts-unity-mcp-extension-demo.md")));
+            Assert.True(File.Exists(Path.Combine(demoRoot, "Packages", "puerts-unity-mcp-extension-demo", "Runtime", "ExtensionDemoRuntimeTools.cs")));
+            Assert.True(File.Exists(Path.Combine(demoRoot, "Packages", "puerts-unity-mcp-extension-demo", "Editor", "ExtensionDemoEditorTools.cs")));
+        }
+
+        [Test]
+        public void ScriptHostUsesFilesystemLoaderForExtensionModules()
+        {
+            var packageRoot = ResolvePackageRootForTest();
+            var scriptHost = File.ReadAllText(Path.Combine(packageRoot, "Runtime", "Scripting", "PuertsScriptHost.cs"));
+
+            StringAssert.Contains("UnityMcpFileSystemScriptLoader", scriptHost);
+            StringAssert.Contains("IResolvableLoader", scriptHost);
+            StringAssert.Contains("File.ReadAllText(filePath)", scriptHost);
+        }
+
+        [Test]
+        public void InstallScriptSeedsExtensionDemos()
+        {
+            var packageRoot = ResolvePackageRootForTest();
+            var installScript = File.ReadAllText(Path.Combine(packageRoot, "Tools~", "install-to-unity-project.mjs"));
+            var cliLib = File.ReadAllText(Path.Combine(packageRoot, "Tools~", "pum-cli-lib.mjs"));
+            var demoScript = File.ReadAllText(Path.Combine(packageRoot, "Tools~", "create-extension-demos.mjs"));
+
+            StringAssert.Contains("skipExtensionDemos", installScript);
+            StringAssert.Contains("ensureExtensionDemos", cliLib);
+            StringAssert.Contains("ExtensionSamples~", cliLib);
+            StringAssert.Contains("ensureExtensionDemos", demoScript);
         }
 
         [Test]
@@ -1074,6 +1201,19 @@ namespace PuertsUnityMcp.Tests
             public Task<string> CallToolAsync(string name, UnityMcpToolArguments arguments)
             {
                 return Tools.ExecuteAsync(new UnityMcpToolContext(this), name, arguments ?? new UnityMcpToolArguments());
+            }
+        }
+
+        public sealed class TestCSharpToolProvider : IUnityMcpToolProvider
+        {
+            public string EndpointKind => "editor";
+
+            public void RegisterTools(UnityMcpToolProviderContext context)
+            {
+                context.TryRegister(new DelegateUnityMcpTool("test.extension.duplicate", "Duplicate should not replace built-in.", JsonSchemas.Object(), (ctx, args) =>
+                    Task.FromResult("{\"source\":\"provider-duplicate\"}")));
+                context.TryRegister(new DelegateUnityMcpTool("test.extension.csharp", "C# extension provider test tool.", JsonSchemas.Object(), (ctx, args) =>
+                    Task.FromResult("{\"source\":\"provider\"}")));
             }
         }
     }

@@ -247,6 +247,14 @@ namespace PuertsUnityMcp.Editor
                 OpenAgentSetupGuide();
             }
 
+            if (GUILayout.Button("Create Extension Demos", GUILayout.Height(30f)))
+            {
+                var result = UnityMcpExtensionDemoInstaller.CreateDemos();
+                installMessage = "Extension demos ready: created " + result.created.Length
+                    + ", skipped " + result.skipped.Length
+                    + ". Root: " + result.targetRoot;
+            }
+
             if (!string.IsNullOrEmpty(installMessage))
             {
                 EditorGUILayout.HelpBox(installMessage, installMessage.StartsWith("Failed", StringComparison.Ordinal) ? MessageType.Error : MessageType.Info);

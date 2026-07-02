@@ -35,7 +35,7 @@
 | Editor 和 Player 截图 | 截取 Game、Scene、Inspector、Console、Hierarchy 等 Unity EditorWindow，也可以截取 Runtime Player/手机画面。 |
 | UI 测试自动化 | 用 snapshot/find/raycast 识别可见 UGUI 控件，再按 text、path、instanceId 或屏幕坐标点击，适合沉淀可重复的 QA 流程。 |
 | Profiler 性能报告 | 通过 Unity Editor Profiler 采集 Editor 或已连接 Player/手机的数据，输出包含帧、marker、GC.Alloc 证据的热点报告。 |
-| C# 和 JS 扩展 MCP Tool | 核心工具用 C# 写，项目工具可以放在 `puerts-unity-mcp-extension/Editor/editor-tools` 和 `Runtime/runtime-tools` 里用 JS 写。 |
+| C# 和 JS 扩展 MCP Tool | 核心工具用 C# 写，项目 JS 工具可以放在 `puerts-unity-mcp-extension/js/editor` 和 `js/runtime`。 |
 | Domain Reload 稳定性 | Editor MCP 会持久化 operation、compile result、reload hint，并在 Unity domain reload 后自动恢复 HTTP endpoint。 |
 
 ## 它控制什么
@@ -91,6 +91,14 @@ Unity 工程里会出现：
 <UnityProject>/puerts-unity-mcp-extension
 <UnityProject>/.puerts-unity-mcp
 ```
+
+如果想把 demo extension 也放进去：
+
+```bash
+node Packages/puerts-unity-mcp/Tools~/create-extension-demos.mjs --unity-project-root <UnityProject>
+```
+
+`install-to-unity-project.mjs` 默认也会创建同一套 demo；需要纯安装时可传 `--skip-extension-demos`。
 
 ### 注册本地 UPM 包
 
@@ -194,12 +202,13 @@ node <UnityProject>/puerts-unity-mcp/Packages/puerts-unity-mcp/Tools~/puerts-uni
 
 ## MCP Tool 扩展
 
-核心工具由 C# 注册。项目工具可以用 JS 写，放在 Unity 工程的 extension 目录里。
+核心工具由 C# 注册。项目工具可以用 JS 或 C# 写，和内置工具进入同一个 `tools/list`。同名工具不会被项目扩展静默覆盖，建议项目工具使用 `project.*`、`game.*` 或团队约定前缀。
 
 ```text
 <UnityProject>/puerts-unity-mcp-extension
-  Editor/editor-tools      Editor 侧 JavaScript MCP tools
-  Runtime/runtime-tools    Runtime / Player 侧 JavaScript MCP tools
+  js/editor                Editor 侧 JavaScript MCP tools
+  js/runtime               Runtime / Player 侧 JavaScript MCP tools
+  Packages/<package>       可选的项目 C# MCP 扩展包
   skills                   给 Agent 使用的项目技能
 ```
 
@@ -211,18 +220,65 @@ node <UnityProject>/puerts-unity-mcp/Packages/puerts-unity-mcp/Tools~/puerts-uni
   "description": "Return the active Unity scene through the runtime PuerTS VM.",
   "modulePath": "active-scene.mjs",
   "functionName": "execute",
-  "inputSchema": {
-    "type": "object",
-    "additionalProperties": true
-  }
+  "inputSchemaJson": "{\"type\":\"object\",\"additionalProperties\":true}"
 }
 ```
 
 Runtime JS tool 会通过 `runtime.js.eval` 执行，所以同一套工具模型可以同时用于 Play Mode 和真实手机。
 
+模块应该导出一个 JSON 形态的函数。后续 Agent 可以从 MCP `initialize` instructions 或 stdio proxy 的 `agent.extension.instructions` 工具里看到同样的约定。
+
+```js
+export function execute(argsJson, contextJson) {
+  const args = JSON.parse(argsJson || "{}");
+  const context = JSON.parse(contextJson || "{}");
+  return {
+    ok: true,
+    endpointKind: context.endpointKind,
+    args
+  };
+}
+```
+
+安装脚本和 Unity 菜单可以把一套 demo 复制到 extension 目录，不覆盖已有文件：
+
+```bash
+node <repo>/Packages/puerts-unity-mcp/Tools~/create-extension-demos.mjs --unity-project-root <UnityProject>
+```
+
+也可以在 Unity 菜单执行 `PuerTS Unity MCP/Create Extension Demos`。Demo 包含：
+
+- `js/editor/demo-editor-scene.*`：Editor JS tool，读取当前 scene 和 Build Settings。
+- `js/runtime/demo-runtime-screen.*`：Runtime JS tool，可在 Play Mode 或手机 Player 上读取屏幕和 scene 信息。
+- `skills/puerts-unity-mcp-extension-demo.md`：教 Agent 如何写项目扩展。
+- `Packages/puerts-unity-mcp-extension-demo`：C# provider local package 示例。若要启用 C# demo，把 `Packages/manifest.json` 里加一行 `"puerts-unity-mcp-extension-demo": "file:../puerts-unity-mcp-extension/Packages/puerts-unity-mcp-extension-demo"`。
+
+把项目专属写法、游戏流程、HotFix 命名规则沉淀到 `puerts-unity-mcp-extension/skills/*.md`；Agent 可以通过 `agent.extension.skills.list`、`editor.skills.list` 或 `runtime.skills.list` 发现和加载。
+
+项目 C# MCP 扩展建议放在独立 local package：`puerts-unity-mcp-extension/Packages/<project-extension-package>`。这个包可以引用 `PuertsUnityMcp` 和项目里的 HotFix 等程序集；核心 `puerts-unity-mcp` 包保持项目无关，构建脚本只需要通过 Unity `Packages/manifest.json` 增删这个扩展包依赖即可启用或移除。C# 扩展实现 `IUnityMcpToolProvider` 后会在 Editor / Runtime host 启动时从已加载程序集自动发现：
+
+```csharp
+using System.Threading.Tasks;
+using PuertsUnityMcp;
+
+public sealed class ProjectMcpTools : IUnityMcpToolProvider
+{
+    public string EndpointKind => "runtime"; // editor, runtime/player, or all
+
+    public void RegisterTools(UnityMcpToolProviderContext context)
+    {
+        context.TryRegister(new DelegateUnityMcpTool(
+            "game.status",
+            "Return project runtime state.",
+            JsonSchemas.Object(),
+            (ctx, args) => Task.FromResult("{\"ok\":true}")));
+    }
+}
+```
+
 ## 内置 MCP Tools
 
-`tools/list` 会返回当前 endpoint 实际可用的工具。下面是 package 自带的 C# 内置工具；项目自己的 JS tools 会额外从 `puerts-unity-mcp-extension` 加载，例如 `game.*` 这类工具不属于通用内置工具。
+`tools/list` 会返回当前 endpoint 实际可用的工具。下面是 package 自带的 C# 内置工具；项目自己的 JS tools 和 C# provider tools 会额外从 extension / 已加载程序集加载，例如 `game.*` 这类工具不属于通用内置工具。
 
 ### Editor MCP
 
@@ -242,7 +298,7 @@ Runtime JS tool 会通过 `runtime.js.eval` 执行，所以同一套工具模型
 | `editor.profiler.connect` | 尝试将 Unity Editor Profiler 切到 Editor 或 Player/手机目标。 |
 | `editor.profiler.capture` | 通过 Unity Editor Profiler 录制并分析 RawFrameData，输出 JSON/CSV/Markdown 到 `.puerts-unity-mcp/perf-reports`。 |
 | `editor.profiler.analyze` | 分析 Unity Editor Profiler 中已有的帧数据，不重新录制。 |
-| `editor.scriptTools.list` | 列出 `puerts-unity-mcp-extension/Editor/editor-tools` 中的项目 JS tools。 |
+| `editor.scriptTools.list` | 列出 `puerts-unity-mcp-extension/js/editor` 中的项目 JS tools。 |
 | `editor.scriptTools.reload` | 重新加载 Editor 项目 JS tools。 |
 | `editor.skills.list` | 列出 `puerts-unity-mcp-extension/skills` 中的项目 skills。 |
 | `editor.skill.load` | 加载一个项目 skill。 |
@@ -271,7 +327,7 @@ Runtime JS tool 会通过 `runtime.js.eval` 执行，所以同一套工具模型
 | `targets.list` | `runtime.targets.list` 的别名。 |
 | `runtime.js.eval` | 在 Runtime PuerTS VM 中执行 JS。 |
 | `runtime.reflection.invoke` | 通过反射 gateway 调用静态 C# 方法。 |
-| `runtime.scriptTools.list` | 列出 `puerts-unity-mcp-extension/Runtime/runtime-tools` 中的项目 JS tools。 |
+| `runtime.scriptTools.list` | 列出 `puerts-unity-mcp-extension/js/runtime` 中的项目 JS tools。 |
 | `runtime.scriptTools.reload` | 重新加载 Runtime 项目 JS tools。 |
 | `runtime.skills.list` | 列出项目 skills。 |
 | `runtime.skill.load` | 加载一个项目 skill。 |
@@ -380,7 +436,7 @@ return {
 - `runtime.ui.click`
 - `input.tap`
 
-稳定的项目流程不要一直生成一次性 eval 脚本，应该沉淀到 `puerts-unity-mcp-extension/Runtime/runtime-tools`。
+稳定的项目流程不要一直生成一次性 eval 脚本，应该沉淀到 `puerts-unity-mcp-extension/js/runtime`。
 
 ### Profiler 性能热点流程
 
@@ -429,8 +485,8 @@ C# 侧 JSON 序列化只使用 Unity `JsonUtility`。项目不依赖 Newtonsoft.
 | `puerts-unity-mcp-extension/mobile-mcp-config.json` | Runtime / Player 配置，会复制进构建 |
 | `Packages/puerts-unity-mcp/Runtime/Plugins/Android` | 随包提供的 MCP Android 权限库；PuerTS native libraries 来自 `third_party/puerts` 官方 UPM 包 |
 | `Assets/puerts-unity-mcp/Runtime/Generated/Plugins/puerts_il2cpp` | 当前 Unity 工程生成的 PuerTS IL2CPP bridge 文件；应忽略并按工程重新生成，不要当成通用 package 源码提交 |
-| `puerts-unity-mcp-extension/Editor/editor-tools` | 项目 Editor JS MCP tools |
-| `puerts-unity-mcp-extension/Runtime/runtime-tools` | 项目 Runtime JS MCP tools |
+| `puerts-unity-mcp-extension/js/editor` | 项目 Editor JS MCP tools |
+| `puerts-unity-mcp-extension/js/runtime` | 项目 Runtime JS MCP tools |
 | `puerts-unity-mcp-extension/skills` | 给 Agent 使用的项目技能 |
 
 临时状态和 operation 数据：
@@ -455,7 +511,7 @@ Assets/puerts-unity-mcp/Runtime/Generated/Plugins/puerts_il2cpp/
 
 不要忽略整个 `puerts-unity-mcp-extension` 目录。这个目录里的项目配置、JS tools、skills 属于持久项目资产，如果它们需要随项目走，可以提交。也不要忽略 `puerts-unity-mcp/Packages/puerts-unity-mcp/Runtime/Plugins/Android`，这里是 package 自带的 Android 权限库。PuerTS 官方 `.so` 来自 `third_party/puerts`，不要在 MCP package 里重复提交。
 
-`puerts-unity-mcp/third_party/puerts/unity/.gitignore` 来自官方 PuerTS，会忽略 Unity 为 vendored PuerTS UPM 包自动生成的 `*.meta`。这些文件在本机打开 Unity 后出现是正常的，不需要提交；官方已经提供的 native plugin `.meta` 会随源码保留。
+Vendored PuerTS `core` 和 `v8` UPM 包里的 `.meta` 必须随源码提交。它们会固定 `MJSImporter.cs` 这类 ScriptedImporter 的 GUID；如果其他机器缺少这些 meta，Unity 会重新生成 importer GUID，并改写 `*.mjs.meta` 里的 `script.guid`。
 
 ## 目录结构
 

@@ -32,6 +32,8 @@ namespace PuertsUnityMcp.Editor
 
             MoveKnown(projectRoot, "puerts-unity-mcp-extension/Editor/config.json", UnityMcpPaths.ProjectConfigPath, moved, skipped, removed);
             MoveKnown(projectRoot, "puerts-unity-mcp-extension/Runtime/runtime-config.json", UnityMcpPaths.RuntimeConfigPath, moved, skipped, removed);
+            MoveKnown(projectRoot, "puerts-unity-mcp-extension/Editor/editor-tools", UnityMcpPaths.EditorToolsRoot(), moved, skipped, removed);
+            MoveKnown(projectRoot, "puerts-unity-mcp-extension/Runtime/runtime-tools", UnityMcpPaths.RuntimeToolsRoot(), moved, skipped, removed);
             MoveKnown(projectRoot, "Assets/PuertsUnityMcp/Editor/config.json", UnityMcpPaths.ProjectConfigPath, moved, skipped, removed);
             MoveKnown(projectRoot, "Assets/PuertsUnityMcp/Editor/JavaScriptWindows", Path.Combine(UnityMcpPaths.EditorExtensionRoot, "JavaScriptWindows"), moved, skipped, removed);
 

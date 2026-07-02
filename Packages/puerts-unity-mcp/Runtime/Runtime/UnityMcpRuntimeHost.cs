@@ -285,12 +285,12 @@ namespace PuertsUnityMcp
                 return Task.FromResult(gateway.InvokeStaticJson(args.typeName, args.methodName, args.argsJson));
             }));
 
-            tools.Register(new DelegateUnityMcpTool("runtime.scriptTools.list", "List project JavaScript MCP tools loaded from puerts-unity-mcp-extension/Runtime/runtime-tools.", JsonSchemas.Object(), (ctx, args) =>
+            tools.Register(new DelegateUnityMcpTool("runtime.scriptTools.list", "List project JavaScript MCP tools loaded from puerts-unity-mcp-extension/js/runtime.", JsonSchemas.Object(), (ctx, args) =>
             {
                 return Task.FromResult(UnityJson.ToJson(BuildRuntimeScriptToolListResult("runtime.scriptTools.list")));
             }));
 
-            tools.Register(new DelegateUnityMcpTool("runtime.scriptTools.reload", "Reload project JavaScript MCP tools from puerts-unity-mcp-extension/Runtime/runtime-tools.", JsonSchemas.Object(), (ctx, args) =>
+            tools.Register(new DelegateUnityMcpTool("runtime.scriptTools.reload", "Reload project JavaScript MCP tools from puerts-unity-mcp-extension/js/runtime.", JsonSchemas.Object(), (ctx, args) =>
             {
                 ResetScriptHost();
                 RegisterRuntimeResourceScriptTools();
@@ -375,6 +375,7 @@ namespace PuertsUnityMcp
                 return Task.FromResult(UnityJson.ToJson(BuildUiClickResult(args)));
             }));
 
+            UnityMcpToolProviderDiscovery.RegisterLoadedAssemblyProviders(this, tools);
             RegisterRuntimeResourceScriptTools();
         }
 
@@ -386,7 +387,7 @@ namespace PuertsUnityMcp
             }
 
             runtimeResourceScriptToolNames.Clear();
-            var manifests = UnityMcpResourceScriptTools.LoadManifests(UnityMcpPaths.RuntimeToolsRoot());
+            var manifests = UnityMcpResourceScriptTools.LoadManifests(UnityMcpPaths.RuntimeToolRoots());
             for (var i = 0; i < manifests.Length; i++)
             {
                 var manifest = manifests[i];
@@ -395,22 +396,31 @@ namespace PuertsUnityMcp
                     continue;
                 }
 
-                tools.Register(new DelegateUnityMcpTool(manifest.name, manifest.description, manifest.inputSchemaJson, (ctx, args) =>
-                    Task.FromResult(ExecuteRuntimeResourceScriptTool(manifest, args))));
-                runtimeResourceScriptToolNames.Add(manifest.name);
+                var tool = new DelegateUnityMcpTool(manifest.name, manifest.description, manifest.inputSchemaJson, (ctx, args) =>
+                    Task.FromResult(ExecuteRuntimeResourceScriptTool(manifest, args)));
+                if (tools.TryRegister(tool))
+                {
+                    runtimeResourceScriptToolNames.Add(manifest.name);
+                }
+                else
+                {
+                    Debug.LogWarning("[UnityMCP] Skipped project Runtime JavaScript MCP tool because the name already exists: " + manifest.name);
+                }
             }
         }
 
         private UnityMcpScriptToolListResult BuildRuntimeScriptToolListResult(string action)
         {
             var toolRoot = UnityMcpPaths.RuntimeToolsRoot();
-            var manifests = UnityMcpResourceScriptTools.LoadManifests(toolRoot);
+            var toolRoots = UnityMcpPaths.RuntimeToolRoots();
+            var manifests = UnityMcpResourceScriptTools.LoadManifests(toolRoots);
             return new UnityMcpScriptToolListResult
             {
                 action = action,
                 targetId = EndpointId,
                 resourceRoot = toolRoot,
                 directoryRoot = toolRoot,
+                directoryRoots = toolRoots,
                 tools = manifests,
                 count = manifests.Length
             };

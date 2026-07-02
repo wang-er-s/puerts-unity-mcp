@@ -13,8 +13,11 @@ namespace PuertsUnityMcp
         public const string ProjectAssetsDirectoryName = "PuertsUnityMcp";
         public const string EditorDirectoryName = "Editor";
         public const string RuntimeDirectoryName = "Runtime";
-        public const string EditorToolsDirectoryName = "editor-tools";
-        public const string RuntimeToolsDirectoryName = "runtime-tools";
+        public const string JavaScriptDirectoryName = "js";
+        public const string EditorToolsDirectoryName = "editor";
+        public const string RuntimeToolsDirectoryName = "runtime";
+        public const string LegacyEditorToolsDirectoryName = "editor-tools";
+        public const string LegacyRuntimeToolsDirectoryName = "runtime-tools";
         public const string SkillsDirectoryName = "skills";
         public const string ResourcesDirectoryName = "Resources";
         public const string TempDirectoryName = "temp";

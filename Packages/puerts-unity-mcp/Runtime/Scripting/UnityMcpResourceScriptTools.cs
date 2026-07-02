@@ -55,6 +55,35 @@ namespace PuertsUnityMcp
             return result.ToArray();
         }
 
+        public static UnityMcpScriptToolManifest[] LoadManifests(IEnumerable<string> directoryRoots)
+        {
+            if (directoryRoots == null)
+            {
+                return new UnityMcpScriptToolManifest[0];
+            }
+
+            var result = new List<UnityMcpScriptToolManifest>();
+            var seen = new HashSet<string>();
+            foreach (var directoryRoot in directoryRoots)
+            {
+                var manifests = LoadManifests(directoryRoot);
+                for (var i = 0; i < manifests.Length; i++)
+                {
+                    var manifest = manifests[i];
+                    if (manifest == null || string.IsNullOrEmpty(manifest.name) || seen.Contains(manifest.name))
+                    {
+                        continue;
+                    }
+
+                    seen.Add(manifest.name);
+                    result.Add(manifest);
+                }
+            }
+
+            result.Sort((left, right) => string.CompareOrdinal(left.name, right.name));
+            return result.ToArray();
+        }
+
         private static bool IsToolManifestFile(string path)
         {
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
@@ -101,7 +130,7 @@ namespace PuertsUnityMcp
         public void Normalize(string directoryRoot, string manifestPath)
         {
             functionName = string.IsNullOrEmpty(functionName) ? "execute" : functionName;
-            description = string.IsNullOrEmpty(description) ? "Project JavaScript MCP tool loaded from puerts-unity-mcp-extension." : description;
+            description = string.IsNullOrEmpty(description) ? "Project JavaScript MCP tool loaded from puerts-unity-mcp-extension/js." : description;
             inputSchemaJson = string.IsNullOrEmpty(inputSchemaJson) ? JsonSchemas.Object() : inputSchemaJson;
 
             var manifestDirectory = string.IsNullOrEmpty(manifestPath)
@@ -138,6 +167,7 @@ namespace PuertsUnityMcp
         public string targetId;
         public string resourceRoot;
         public string directoryRoot;
+        public string[] directoryRoots;
         public int count;
         public UnityMcpScriptToolManifest[] tools;
     }
