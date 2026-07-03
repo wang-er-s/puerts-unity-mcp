@@ -141,6 +141,7 @@ namespace PuertsUnityMcp.Tests
             var packageRoot = ResolvePackageRootForTest();
             var manifest = File.ReadAllText(Path.Combine(packageRoot, "Runtime", "Plugins", "Android", "puerts-unity-mcp.androidlib", "AndroidManifest.xml"));
 
+            StringAssert.Contains("package=\"com.killop.puertsunitymcp\"", manifest);
             StringAssert.Contains("android.permission.INTERNET", manifest);
             StringAssert.Contains("android.permission.ACCESS_NETWORK_STATE", manifest);
             Assert.False(manifest.Contains("android.permission.ACCESS_WIFI_STATE"));

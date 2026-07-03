@@ -643,7 +643,8 @@ function writeAndroidPermissions(projectRoot, options) {
   const manifestPath = path.join(androidRoot, "AndroidManifest.xml");
   const projectPropertiesPath = path.join(androidRoot, "project.properties");
   const manifest = [
-    '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+    '<manifest xmlns:android="http://schemas.android.com/apk/res/android"',
+    '  package="com.killop.puertsunitymcp">',
     '  <uses-permission android:name="android.permission.INTERNET" />',
     '  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
     "</manifest>",
