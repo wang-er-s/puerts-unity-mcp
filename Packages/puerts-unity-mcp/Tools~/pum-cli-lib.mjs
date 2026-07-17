@@ -159,7 +159,7 @@ export function addPumToBuild(projectRoot, options = {}) {
 
 export function removePumFromBuild(projectRoot, options = {}) {
   assertUnityProjectRoot(projectRoot);
-  updateManifestRemove(projectRoot);
+  updateManifestRemove(projectRoot, options.extensionPackageNames || []);
   removePathInsideProject(projectRoot, path.join("Assets", "StreamingAssets", "PuertsUnityMcp", "mobile-mcp-config.json"));
   removeEmptyDirectory(projectRoot, path.join("Assets", "StreamingAssets", "PuertsUnityMcp"));
   removeLegacyProjectAndroidPluginArtifacts(projectRoot);
@@ -253,6 +253,7 @@ export function installToUnityProject(options) {
     if (!options.skipExtensionDemos) {
       ensureExtensionDemos(unityProjectRoot, { toolsRoot });
     }
+    addExtensionPackagesToManifest(unityProjectRoot);
     return;
   }
 
@@ -270,7 +271,37 @@ export function installToUnityProject(options) {
     ensureExtensionDemos(unityProjectRoot, { toolsRoot });
   }
 
+  addExtensionPackagesToManifest(unityProjectRoot);
   console.log(`Installed PuerTS Unity MCP dependencies into ${manifestPath}`);
+}
+
+export function getExtensionPackageNames(projectRoot) {
+  return getExtensionPackageDependencies(projectRoot).map(([name]) => name);
+}
+
+function getExtensionPackageDependencies(projectRoot) {
+  const packagesRoot = path.join(projectRoot, "puerts-unity-mcp-extension", "Packages");
+  if (!fs.existsSync(packagesRoot)) {
+    return [];
+  }
+
+  return fs.readdirSync(packagesRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const packageJsonPath = path.join(packagesRoot, entry.name, "package.json");
+      if (!fs.existsSync(packageJsonPath)) {
+        return null;
+      }
+
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+      const packageName = typeof packageJson.name === "string" ? packageJson.name.trim() : "";
+      if (!packageName) {
+        return null;
+      }
+
+      return [packageName, `file:../puerts-unity-mcp-extension/Packages/${entry.name}`];
+    })
+    .filter(Boolean);
 }
 
 export function ensureExtensionDemos(projectRoot, options = {}) {
@@ -455,12 +486,40 @@ function updateManifestAdd(projectRoot, options) {
   console.log(`Updated ${manifestPath}`);
 }
 
-function updateManifestRemove(projectRoot) {
+function updateManifestRemove(projectRoot, extraPackageKeys = []) {
   const manifestPath = path.join(projectRoot, "Packages", "manifest.json");
   const file = readFileLines(manifestPath);
-  const lines = repairDependencyTrailingComma(removePackageDependencyLines(file.lines));
+  const lines = repairDependencyTrailingComma(removePackageDependencyLines(file.lines, extraPackageKeys));
   writeFileLines(manifestPath, lines, file.newLine);
   console.log(`Updated ${manifestPath}`);
+}
+
+function addExtensionPackagesToManifest(projectRoot) {
+  const entries = getExtensionPackageDependencies(projectRoot);
+  if (entries.length === 0) {
+    return;
+  }
+
+  const manifestPath = path.join(projectRoot, "Packages", "manifest.json");
+  const file = readFileLines(manifestPath);
+  const lines = removeDependencyLines(file.lines, entries.map(([name]) => name));
+  const dependenciesStart = findDependenciesStart(lines);
+  if (dependenciesStart < 0) {
+    throw new Error(`Could not find dependencies object in ${manifestPath}`);
+  }
+
+  const existingCount = countDependencyEntries(lines, dependenciesStart);
+  const dependencyLines = newDependencyLines(entries, existingCount > 0);
+  const updated = [];
+  for (let index = 0; index < lines.length; index++) {
+    updated.push(lines[index]);
+    if (index === dependenciesStart) {
+      updated.push(...dependencyLines);
+    }
+  }
+
+  writeFileLines(manifestPath, updated, file.newLine);
+  console.log(`Updated ${manifestPath} with ${entries.length} extension package(s).`);
 }
 
 function newPackageDependencyLines(hasExistingDependencies, options) {
@@ -471,6 +530,10 @@ function newPackageDependencyLines(hasExistingDependencies, options) {
     ["puerts-unity-mcp", `${prefix}/Packages/puerts-unity-mcp`]
   ];
 
+  return newDependencyLines(entries, hasExistingDependencies);
+}
+
+function newDependencyLines(entries, hasExistingDependencies) {
   return entries.map(([key, value], index) => {
     const isLastInserted = index === entries.length - 1;
     const comma = hasExistingDependencies || !isLastInserted ? "," : "";
@@ -863,8 +926,13 @@ function findRootObjectEnd(lines) {
   return -1;
 }
 
-function removePackageDependencyLines(lines) {
-  return lines.filter((line) => !packageKeys.some((key) => new RegExp(`^\\s*"${escapeRegExp(key)}"\\s*:`).test(line)));
+function removePackageDependencyLines(lines, extraPackageKeys = []) {
+  const keys = [...packageKeys, ...extraPackageKeys];
+  return removeDependencyLines(lines, keys);
+}
+
+function removeDependencyLines(lines, keys) {
+  return lines.filter((line) => !keys.some((key) => new RegExp(`^\\s*"${escapeRegExp(key)}"\\s*:`).test(line)));
 }
 
 function countDependencyEntries(lines, startIndex) {
