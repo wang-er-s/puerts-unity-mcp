@@ -44,11 +44,24 @@ namespace PuertsUnityMcp.Editor
             }
 
             startupScheduled = true;
-            EditorApplication.delayCall += () =>
+            if (!EditorApplication.isCompiling)
             {
-                startupScheduled = false;
-                EnsureStarted();
-            };
+                RunScheduledStartup();
+                return;
+            }
+
+            EditorApplication.delayCall += RunScheduledStartup;
+        }
+
+        private static void RunScheduledStartup()
+        {
+            if (!startupScheduled)
+            {
+                return;
+            }
+
+            startupScheduled = false;
+            EnsureStarted();
         }
 
         public static void StartEndpoint()
@@ -193,6 +206,7 @@ namespace PuertsUnityMcp.Editor
             UnityMcpEditorLocks.DeleteCompilingLock();
             CleanupCompileResults();
             WriteCompileResult();
+            RunScheduledStartup();
         }
 
         private static void WriteCompileResult()
